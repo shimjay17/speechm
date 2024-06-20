@@ -146,3 +146,6 @@ dmypy.json
 cache/
 data/
 runs/
+
+# env
+causal-conv1d/
