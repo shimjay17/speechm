@@ -22,13 +22,27 @@ class DatasetConfig(ChoiceRegistry):
     dataset_id: str                                 # Unique ID that fully specifies a dataset variant
 
     # Dataset Components for each Stage in < align | finetune >
-    align_stage_components: Path      # Path to annotation file containing text and audio file paths
-    finetune_stage_components: Path  # Path to annotation file containing text and audio file paths for `finetune` stage
+    align_stage_components: Path = None      # Path to annotation file containing text and audio file paths
+    finetune_stage_components: Path = None  # Path to annotation file containing text and audio file paths for `finetune` stage
     align_stage_eval_components: Path = Path("data") 
+
+    dataset1_config = None 
+    dataset2_config = None
 
     # dataset_root_dir: Path                          # Path to dataset root directory; others paths are relative to root
     # fmt: on
 
+# @dataclass
+# class MultiDatasetConfig(ChoiceRegistry):
+#     # fmt: off
+#     dataset_id: str # Unique ID that fully specifies a dataset variant
+
+#     # Dataset Components for each Stage in < align | finetune >
+#     dataset1_config: DatasetConfig 
+#     dataset2_config: DatasetConfig
+
+#     # dataset_root_dir: Path                          # Path to dataset root directory; others paths are relative to root
+#     # fmt: on
 
 # [Reproduction] LLaVa-v15 (exact dataset used in all public LLaVa-v15 models)
 @dataclass
@@ -113,12 +127,32 @@ class LLaVa_LVIS4V_LRV_Config(DatasetConfig):
 class Librispeech_Config(DatasetConfig):
     dataset_id: str = "librispeech"
 
-    align_stage_components: Path =  Path("/mnt/hdd/hsyoon/workspace/samsung/cobra/cobra/data/libirspeech/train.json")
-    align_stage_eval_components: Path =  Path("/mnt/hdd/hsyoon/workspace/samsung/cobra/cobra/data/libirspeech/test.json")
+    align_stage_components: Path =  Path("/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/librispeech/train.json")
+    align_stage_eval_components: Path =  Path("/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/librispeech/test.json")
 
-    finetune_stage_components: Path =  Path("/mnt/hdd/hsyoon/workspace/samsung/cobra/cobra/data/libirspeech/train.json")
+    finetune_stage_components: Path =  Path("/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/librispeech/train.json")
 
     dataset_root_dir: Path = Path("data")
+
+@dataclass
+class Gigaspeech_Config(DatasetConfig):
+    dataset_id: str = "gigaspeech"
+
+    align_stage_components: Path =  Path("/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/gigaspeech/train_ver3_3min.json")
+    align_stage_eval_components = None
+
+    finetune_stage_components: Path =  Path("/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/gigaspeech/train_ver3_3min.json")
+
+    dataset_root_dir: Path = Path("data")
+
+@dataclass
+class Librispeech_Gigaspeech_config(DatasetConfig):
+    dataset_id: str = "librispeech+gigaspeech"
+
+    dataset1_config = Librispeech_Config
+    dataset2_config = Gigaspeech_Config
+
+
 
 # === Define a Dataset Registry Enum for Reference & Validation =>> all *new* datasets must be added here! ===
 @unique
@@ -135,6 +169,9 @@ class DatasetRegistry(Enum):
 
     # Librispeech
     LIBRISPEECH = Librispeech_Config
+
+    # Multiple Datasets
+    LIBRISPEECH_GIGASPEECH = Librispeech_Gigaspeech_config
 
     @property
     def dataset_id(self) -> str:

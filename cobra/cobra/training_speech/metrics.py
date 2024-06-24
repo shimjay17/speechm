@@ -109,6 +109,7 @@ class Metrics:
         wandb_entity: Optional[str] = None,
         grad_accumulation_steps: int = 1,
         window_size: int = 128,
+        giga_speech: bool = False,
     ) -> None:
         self.run_id, self.run_dir, self.hparams, self.stage = run_id, run_dir, hparams, stage
 
@@ -130,13 +131,27 @@ class Metrics:
 
         # Create Universal Metrics Buffers
         self.global_step, self.start_time, self.step_start_time = 0, time.time(), time.time()
-        self.state = {
-            "loss_raw": deque(maxlen=grad_accumulation_steps),
-            "loss": deque(maxlen=window_size),
-            "step_time": deque(maxlen=window_size),
-            "lr": [],
-            "eval_loss": None,
-        }
+
+        if giga_speech:
+            self.state = {
+                "loss_raw": deque(maxlen=grad_accumulation_steps),
+                "loss": deque(maxlen=window_size),
+                "libri_loss_raw": deque(maxlen=grad_accumulation_steps),
+                "libri_loss": deque(maxlen=window_size),
+                "giga_loss_raw": deque(maxlen=grad_accumulation_steps),
+                "giga_loss": deque(maxlen=window_size),
+                "step_time": deque(maxlen=window_size),
+                "lr": [],
+                "eval_loss": None,
+            }
+        else:
+            self.state = {
+                "loss_raw": deque(maxlen=grad_accumulation_steps),
+                "loss": deque(maxlen=window_size),
+                "step_time": deque(maxlen=window_size),
+                "lr": [],
+                "eval_loss": None,
+            }
 
         self.eval = False
 
@@ -181,6 +196,14 @@ class Metrics:
                 loss_val = value.detach()
                 self.state["loss_raw"].append(loss_val)
                 self.state["loss"].append(loss_val)
+            elif key == "libri_loss": #added by HSY 6/22/24
+                loss_val = value.detach()
+                self.state["libri_loss_raw"].append(loss_val)
+                self.state["libri_loss"].append(loss_val)
+            elif key == "giga_loss": #added by HSY 6/22/24
+                loss_val = value.detach()
+                self.state["giga_loss_raw"].append(loss_val)
+                self.state["giga_loss"].append(loss_val)
             else:
                 self.state[key].append(value.detach())
 
@@ -198,28 +221,62 @@ class Metrics:
         # Fire to Trackers
         prefix = self.stage.capitalize()
         if self.eval and self.state["eval_loss"] is not None:
-            self.log(
-                self.global_step,
-                metrics={
-                    f"{prefix}/Step": self.global_step,
-                    f"{prefix}/Loss": loss,
-                    f"{prefix}/Loss (Raw)": loss_raw,
-                    f"{prefix}/Learning Rate": lr,
-                    f"{prefix}/Step Time": step_time,
-                    f"{prefix}/Validation Loss": self.state["eval_loss"],
-                },
-            )
+
+            if 'giga_loss' in self.state:
+                self.log(
+                    self.global_step,
+                    metrics={
+                        f"{prefix}/Step": self.global_step,
+                        f"{prefix}/Loss": loss,
+                        f"{prefix}/Loss (Raw)": loss_raw,
+                        f"{prefix}/Learning Rate": lr,
+                        f"{prefix}/Step Time": step_time,
+                        f"{prefix}/Validation Loss": self.state["eval_loss"],
+                        f"{prefix}/Libri Loss (Raw)": torch.stack(list(self.state["libri_loss_raw"])).mean().item(),
+                        f"{prefix}/Libri Loss": torch.stack(list(self.state["libri_loss"])).mean().item(),
+                        f"{prefix}/Giga Loss (Raw)": torch.stack(list(self.state["giga_loss_raw"])).mean().item(),
+                        f"{prefix}/Giga Loss": torch.stack(list(self.state["giga_loss"])).mean().item(),
+                    },
+                )
+            else:
+                self.log(
+                    self.global_step,
+                    metrics={
+                        f"{prefix}/Step": self.global_step,
+                        f"{prefix}/Loss": loss,
+                        f"{prefix}/Loss (Raw)": loss_raw,
+                        f"{prefix}/Learning Rate": lr,
+                        f"{prefix}/Step Time": step_time,
+                        f"{prefix}/Validation Loss": self.state["eval_loss"],
+                    },
+                )
         else:
-            self.log(
-                self.global_step,
-                metrics={
-                    f"{prefix}/Step": self.global_step,
-                    f"{prefix}/Loss": loss,
-                    f"{prefix}/Loss (Raw)": loss_raw,
-                    f"{prefix}/Learning Rate": lr,
-                    f"{prefix}/Step Time": step_time,
-                },
-            )
+            if 'giga_loss' in self.state:
+                self.log(
+                    self.global_step,
+                    metrics={
+                        f"{prefix}/Step": self.global_step,
+                        f"{prefix}/Loss": loss,
+                        f"{prefix}/Loss (Raw)": loss_raw,
+                        f"{prefix}/Learning Rate": lr,
+                        f"{prefix}/Step Time": step_time,
+                        f"{prefix}/Libri Loss (Raw)": torch.stack(list(self.state["libri_loss_raw"])).mean().item(),
+                        f"{prefix}/Libri Loss": torch.stack(list(self.state["libri_loss"])).mean().item(),
+                        f"{prefix}/Giga Loss (Raw)": torch.stack(list(self.state["giga_loss_raw"])).mean().item(),
+                        f"{prefix}/Giga Loss": torch.stack(list(self.state["giga_loss"])).mean().item(),
+                    },
+                )
+            else:
+                self.log(
+                    self.global_step,
+                    metrics={
+                        f"{prefix}/Step": self.global_step,
+                        f"{prefix}/Loss": loss,
+                        f"{prefix}/Loss (Raw)": loss_raw,
+                        f"{prefix}/Learning Rate": lr,
+                        f"{prefix}/Step Time": step_time,
+                    },
+                )
         return status
 
     def finalize(self) -> str:

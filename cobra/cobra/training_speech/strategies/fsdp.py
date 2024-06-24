@@ -31,7 +31,8 @@ from transformers.optimization import get_cosine_schedule_with_warmup
 
 from cobra.models.slms import CobraSLM
 from cobra.overwatch import initialize_overwatch
-from cobra.training_speech.strategies.base_strategy import TrainingStrategy
+# from cobra.training_speech.strategies.base_strategy import TrainingStrategy
+from cobra.training_speech.strategies.base_strategy_libri_giga import TrainingStrategy
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
