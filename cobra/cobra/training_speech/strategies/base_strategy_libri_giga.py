@@ -118,10 +118,10 @@ class TrainingStrategy(ABC):
     def run_training(
         self,
         libri_dataset: Dataset,
-        giga_dataset: Dataset,
+        giga_dataset: Optional[Dataset],
         eval_dataset: Dataset,
         libri_collator: SpeechPaddedCollatorForLanguageModeling,
-        giga_collator: GigaSpeechPaddedCollatorForLanguageModeling,
+        giga_collator: Optional[GigaSpeechPaddedCollatorForLanguageModeling],
         metrics: Metrics,
         stage: str = "finetune",
         batch_construction_strategy: str = "split-modality",
@@ -132,7 +132,6 @@ class TrainingStrategy(ABC):
             # Instantiate the split-modality sampler; if you want to extend with other batch construction schemes,
             #   (e.g., grouping by length) =>> can easily add them here!
             modality_lengths = libri_dataset.get_modality_lengths()
-            modality_lengths += giga_dataset.get_modality_lengths()
             sampler = SplitModalitySampler(
                 libri_dataset,
                 modality_lengths,
@@ -152,14 +151,15 @@ class TrainingStrategy(ABC):
                 seed=seed,
                 drop_last=False,
             )
-            giga_sampler = DistributedSampler(
-                giga_dataset,
-                num_replicas=overwatch.world_size(),
-                rank=overwatch.rank(),
-                shuffle=True,
-                seed=seed,
-                drop_last=False,
-            )
+            if giga_dataset:
+                giga_sampler = DistributedSampler(
+                    giga_dataset,
+                    num_replicas=overwatch.world_size(),
+                    rank=overwatch.rank(),
+                    shuffle=True,
+                    seed=seed,
+                    drop_last=False,
+                )
  
         eval_sampler = SequentialSampler(eval_dataset) # libri
 
@@ -173,15 +173,16 @@ class TrainingStrategy(ABC):
         #     num_workers=0, # added by esyoon 2024-06-10-23:33:40 for debug
         #     worker_init_fn=self.worker_init_fn,
         # )
-        giga_dataloader = DataLoader(
-            giga_dataset,
-            batch_size=self.per_device_batch_size // 2,
-            sampler=giga_sampler,
-            collate_fn=giga_collator,
-            # num_workers=0,
-            num_workers=6, # added by esyoon 2024-06-10-23:33:40 for debug
-            worker_init_fn=self.worker_init_fn,
-        )
+        if giga_dataset:
+            giga_dataloader = DataLoader(
+                giga_dataset,
+                batch_size=self.per_device_batch_size // 2,
+                sampler=giga_sampler,
+                collate_fn=giga_collator,
+                # num_workers=0,
+                num_workers=6, # added by esyoon 2024-06-10-23:33:40 for debug
+                worker_init_fn=self.worker_init_fn,
+            )
         libri_dataloader = DataLoader(
             libri_dataset,
             batch_size=self.per_device_batch_size // 2,
@@ -191,8 +192,8 @@ class TrainingStrategy(ABC):
             num_workers=6, # added by esyoon 2024-06-10-23:33:40 for debug
             worker_init_fn=self.worker_init_fn,
         )
-
-        giga_iterator = iter(giga_dataloader)
+        if giga_dataset:
+            giga_iterator = iter(giga_dataloader)
 
 
         # Create a evaluation dataloader with the initialized sampler, per-device-bsz, and collator
@@ -228,7 +229,8 @@ class TrainingStrategy(ABC):
             for epoch in range(self.epochs):
                 self.slm.train()
                 libri_sampler.set_epoch(epoch)
-                giga_sampler.set_epoch(epoch)
+                if giga_dataset
+                    giga_sampler.set_epoch(epoch)
 
                 # Zero-Gradients (just in case)
                 self.optimizer.zero_grad()
@@ -236,12 +238,13 @@ class TrainingStrategy(ABC):
                 # Note that we'll unpack batch (and let AMP/FSDP do its thing) in the SLM.forward() call
                 #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
                 for train_idx, libri_batch in enumerate(libri_dataloader):
-                    # Get Giga Batch
-                    try:
-                        giga_batch = next(giga_iterator)
-                    except:
-                        giga_iterator = iter(giga_dataloader)
-                        giga_batch = next(giga_iterator)
+                    if giga_dataset:
+                        # Get Giga Batch
+                        try:
+                            giga_batch = next(giga_iterator)
+                        except:
+                            giga_iterator = iter(giga_dataloader)
+                            giga_batch = next(giga_iterator)
                     # Combine Libri & Giga Batches
                     # batch = {k: torch.cat([libri_batch[k], giga_batch[k]], dim=0) for k in libri_batch.keys()}
                     # [Contract] self.slm.forward() must automatically compute `loss` and return!
@@ -266,31 +269,34 @@ class TrainingStrategy(ABC):
                     normalized_loss = libri_loss / self.grad_accumulation_steps
                     normalized_loss.backward()
 
-                    with torch.autocast(
-                        "cuda",
-                        dtype=self.mixed_precision_dtype,
-                        enabled=self.enable_mixed_precision_training,
-                    ):                      
-                        #torch.cuda.empty_cache()
-                        giga_output: CausalLMOutputWithPast = self.slm(
-                            input_ids=giga_batch["input_ids"],
-                            attention_mask=giga_batch["attention_mask"],
-                            input_values=giga_batch["input_values"],
-                            labels=giga_batch["labels"],
-                            multimodal_indices=giga_batch["multimodal_indices"],
-                            num_segments=giga_batch['num_segments']
-                        )
-                        giga_loss = giga_output.loss
+                    if giga_dataset:
+                        with torch.autocast(
+                            "cuda",
+                            dtype=self.mixed_precision_dtype,
+                            enabled=self.enable_mixed_precision_training,
+                        ):                      
+                            #torch.cuda.empty_cache()
+                            giga_output: CausalLMOutputWithPast = self.slm(
+                                input_ids=giga_batch["input_ids"],
+                                attention_mask=giga_batch["attention_mask"],
+                                input_values=giga_batch["input_values"],
+                                labels=giga_batch["labels"],
+                                multimodal_indices=giga_batch["multimodal_indices"],
+                                num_segments=giga_batch['num_segments']
+                            )
+                            giga_loss = giga_output.loss
+                            
+                            
+                        giga_loss = (giga_loss * giga_batch_size)/(libri_batch_size + giga_batch_size)
+                        metrics.commit(giga_loss=giga_loss) #added by HSY 6/22/24
+                        normalized_loss = giga_loss / self.grad_accumulation_steps
                         
-                        
-                    giga_loss = (giga_loss * giga_batch_size)/(libri_batch_size + giga_batch_size)
-                    metrics.commit(giga_loss=giga_loss) #added by HSY 6/22/24
-                    normalized_loss = giga_loss / self.grad_accumulation_steps
-                    
-                    normalized_loss.backward()                        
+                        normalized_loss.backward()                        
 
-
-                    loss = libri_loss + giga_loss
+                    if giga_dataset:
+                        loss = libri_loss + giga_loss
+                    else:
+                        loss = libri_loss
                     # Commit Loss (Prior to Gradient Accumulation Normalization)
                     metrics.commit(loss=loss)
 
