@@ -102,6 +102,9 @@ class CobraSLM(SLM):
         self.second_per_window = second_per_window
         self.second_stride = second_stride
 
+        self.llm_backbone_name = llm_backbone.__class__.__name__ # MambaLLMBackbone, PythiaLLMBackbone
+
+
     def mamba_generate(self, *args, **kwargs):
         return MambaGenerationMixin.generate(self, *args, **kwargs)
 
@@ -514,20 +517,38 @@ class CobraSLM(SLM):
             fused_embeddings = torch.vstack([multimodal_embeddings, unimodal_embeddings])
             fused_labels = torch.vstack([multimodal_labels, unimodal_labels])
         # Run LLM Forward --> returns CausalLMOutputWithPast!
-        return self.llm_backbone(
-            input_ids=None,
-            attention_mask=None,
-            position_ids=None,
-            past_key_values=past_key_values,
-            inputs_embeds=fused_embeddings,
-            labels=fused_labels,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            inference_params=inference_params,
-            num_last_tokens=num_last_tokens,
-        )
+
+        if self.llm_backbone_name == "MambaLLMBackbone":
+        # Run LLM Forward --> returns CausalLMOutputWithPast!
+            return self.llm_backbone(
+                input_ids=None,
+                attention_mask=None,
+                position_ids=None,
+                past_key_values=past_key_values,
+                inputs_embeds=fused_embeddings,
+                labels=fused_labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                inference_params=inference_params,
+                num_last_tokens=num_last_tokens,
+            )
+            
+        # Run LLM Forward --> returns CausalLMOutputWithPast!
+        elif self.llm_backbone_name == "PhiLLMBackbone":
+            return self.llm_backbone(
+                input_ids=None,
+                attention_mask=None, # fused_attention_mask,
+                position_ids=None,
+                past_key_values=past_key_values,
+                inputs_embeds=fused_embeddings,
+                labels=fused_labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )    
 
     # === GenerationMixin Methods ===
     #   => Note: The following methods override the functionality of `transformers.GenerationMixin`; these expect the

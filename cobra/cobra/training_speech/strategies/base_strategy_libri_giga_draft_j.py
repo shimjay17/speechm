@@ -229,9 +229,6 @@ class TrainingStrategy(ABC):
                 giga_iterator = iter(giga_dataloader) if giga_dataset else None
 
                 for train_idx in range(steps_per_epoch * self.grad_accumulation_steps):
-                    libri_batch = None
-                    giga_batch = None
-
                     if libri_dataset:
                         libri_batch = next(libri_iterator, None)
                     if giga_dataset:

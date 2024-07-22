@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 
 from transformers import PreTrainedTokenizerBase
 
-from cobra.models.backbones.llm import LLMBackbone, MambaLLMBackbone
+from cobra.models.backbones.llm import LLMBackbone, MambaLLMBackbone, PhiLLMBackbone
 from cobra.models.backbones.vision import (
     CLIPViTBackbone,
     DinoCLIPViTBackbone,
@@ -61,6 +61,9 @@ LLM_BACKBONES = {
     "mamba-2.8b-slimpj": {"cls": MambaLLMBackbone, "kwargs": {}},
     "mamba-2.8b": {"cls": MambaLLMBackbone, "kwargs": {}},
     "mamba-2.8b-zephyr": {"cls": MambaLLMBackbone, "kwargs": {}},
+    #NOTE - Added by Jay 24.04.07
+    "phi-2-3b": {"cls": PhiLLMBackbone, "kwargs": {}},
+
 }
 
 # fmt: on

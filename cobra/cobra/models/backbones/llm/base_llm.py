@@ -110,6 +110,7 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
         self.llm_family = llm_family
         self.llm_max_length = llm_max_length
         self.inference_mode = inference_mode
+        self.llm_backbone_id = llm_backbone_id
 
         # Initialize LLM (downloading from HF Hub if necessary) --> `llm_cls` is the actual {Model}ForCausalLM class!
         #   => Note: We're eschewing use of the AutoModel API so that we can be more explicit about LLM-specific details
@@ -124,17 +125,30 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
                 temperature=1.0,
                 top_p=1.0,
             )
-
-        # [Contract] `inference_mode` means we're loading from a pretrained checkpoint; no need to load base weights!
+        #Note - Added by Jay 24.04.07
         else:
-            overwatch.info(f"Building empty [bold]{llm_family}[/] LLM from [underline]`{hf_hub_path}`[/]", ctx_level=1)
-            llm_config = AutoConfig.from_pretrained(hf_hub_path, token=hf_token)
-            self.llm = llm_cls._from_config(llm_config)
-            #
-            # print("DEBUG EMPTY LLM INITIALIZE")
-            # import IPython
-            # IPython.embed()
-            # exit(0)
+            if self.llm_backbone_id == "phi-2-3b":
+                overwatch.info(f"self.inference_mode: {self.inference_mode}, [bold]{llm_family} weight should be loaded!! - revised by kookie 24.06.16", ctx_level=1)
+                overwatch.info(f"Loading [bold]{llm_family}[/] LLM from [underline]`{hf_hub_path}`[/]", ctx_level=1)
+                self.llm = llm_cls.from_pretrained(
+                    hf_hub_path,
+                    token=hf_token,
+                    use_flash_attention_2=use_flash_attention_2 if not self.inference_mode else False,
+                    # The following parameters are set to prevent `UserWarnings` from HF; we want greedy decoding!
+                    do_sample=False,
+                    temperature=1.0,
+                    top_p=1.0,
+                )
+        # [Contract] `inference_mode` means we're loading from a pretrained checkpoint; no need to load base weights!
+            else:
+                overwatch.info(f"Building empty [bold]{llm_family}[/] LLM from [underline]`{hf_hub_path}`[/]", ctx_level=1)
+                llm_config = AutoConfig.from_pretrained(hf_hub_path, token=hf_token)
+                self.llm = llm_cls._from_config(llm_config)
+                #
+                # print("DEBUG EMPTY LLM INITIALIZE")
+                # import IPython
+                # IPython.embed()
+                # exit(0)
 
         # Lightweight Handling (with extended explanation) for setting some LLM Parameters
         #   => Set `decoder.use_cache = False` --> incompatible with gradient checkpointing (+ training in general)
@@ -150,8 +164,11 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
 
         # Load (Fast) Tokenizer
         overwatch.info(f"Loading [bold]{llm_family}[/] (Fast) Tokenizer via the AutoTokenizer API", ctx_level=1)
-        self.tokenizer = AutoTokenizer.from_pretrained(hf_hub_path, model_max_length=self.llm_max_length, token=hf_token)
-
+        if self.llm_backbone_id == "phi-2-3b":
+            self.tokenizer = AutoTokenizer.from_pretrained(hf_hub_path, model_max_length=self.llm_max_length, token=hf_token, padding_side="right")
+            assert self.tokenizer.padding_side == "right", "Tokenizer `padding_side` is not set to `right`!" #NOTE: 위랑 세트임
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(hf_hub_path, model_max_length=self.llm_max_length, token=hf_token)
         # Validation =>> Our VLM logic currently operates under the assumption that the tokenization of a new input
         #                starts with a <BOS> token unless `add_special_tokens = False`; for these models, we empirically
         #                find that adding image patches *after* the BOS leads to much better performance
@@ -159,6 +176,18 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
         # As a result we explicitly validate that a tokenizer conforms to the expected behavior; if you're reading this
         # line, it's probably because you're adding a new LLM with a different tokenizer behavior. If so, feel free to
         # override this, but make sure to make the appropriate changes in the `datasets.py` and VLM `forward()` logic!
+
+        SPECIAL_CASES = {
+            # Phi-2 Tokenizer doesn't add any BOS tokens by default, and sets BOS == EOS == "<|endoftext|>"
+            #   =>> We'll prepend BOS to first input (to play nicely with image token insertion logic; verified that
+            #       this works well with base LLM generation.
+            #   =>> Like Llama-2 Tokenizers -- we'll add a special PAD token for training purposes.
+            "phi-2-3b",
+        }
+        if self.identifier in SPECIAL_CASES:
+            return
+
+
         if "mamba" not in hf_hub_path:
             assert (self.tokenizer("Testing 123", add_special_tokens=True).input_ids[0] == self.tokenizer.bos_token_id) and (
                 self.tokenizer("Testing 123", add_special_tokens=False).input_ids[0] != self.tokenizer.bos_token_id

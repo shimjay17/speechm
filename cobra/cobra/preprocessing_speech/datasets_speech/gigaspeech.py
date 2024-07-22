@@ -4,10 +4,13 @@ import os
 from tqdm import tqdm
 
 file_path = '/data2/data_account/workspace/data/GigaSpeech/GigaSpeech.json'
-save_file_name = '/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/gigaspeech/train_ver3_3min.json'
+# save_file_name = '/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/gigaspeech/train_ver3_3min.json'
+save_file_name = '/data2/data_account/workspace/samsung/speech_summarization_mamba/cobra/data/gigaspeech/eval_3min.json'
 root_dir = '/data2/data_account/workspace/data/GigaSpeech'
 
-dataset = {'train':[]}
+# dataset = {'train':[]}
+dataset_key = 'eval'
+dataset = {dataset_key:[]}
 
 # duration = 180 # 3 minutes(30-)
 duration = (30 - 0.333) * 5 + 30 # 3 minutes with 0.333 seconds overlap
@@ -25,7 +28,6 @@ def save_json(data, file):
         
 with open(file_path, 'r') as f:
     data = json.load(f)
-
 for audio in tqdm(data['audios']):
     data_item =  {"segment_time": [], 'text': [], 'text_tn': [], 'data_id': []}
     segment_time = 0
@@ -37,7 +39,8 @@ for audio in tqdm(data['audios']):
     # data_item['path'] = os.path.join(root_dir, audio['path'])
     # data_item['seg'] = audio['segments']
     # =============================================================================================================
-        if '{L}' in seg['subsets']:
+        # if '{L}' in seg['subsets']: # for train L set
+        if '{DEV}' in seg['subsets']: # for dev set
             segment_time_check = segment_time + (seg['end_time'] - seg['begin_time'])
 
             if segment_time_check < duration:
@@ -51,21 +54,21 @@ for audio in tqdm(data['audios']):
 
                 if idx == len(audio['segments']) - 1:
                     data_item['segment_duration'] = segment_time_check
-                    dataset['train'].append(data_item)
+                    dataset[dataset_key].append(data_item)
                     data_item =  {"segment_time": [], 'text': [], 'text_tn': [], 'data_id': []}
                     segment_time = 0
                     segment_time_check = 0
             
             else:
                 data_item['segment_duration'] = segment_time
-                dataset['train'].append(data_item)
+                dataset[dataset_key].append(data_item)
                 data_item =  {"segment_time": [], 'text': [], 'text_tn': [], 'data_id': []}
                 segment_time = 0
                 segment_time_check = 0
             
         if segment_time_check < duration and idx == len(audio['segments']) - 1 and data_item['segment_time'] != []:
             data_item['segment_duration'] = segment_time_check
-            dataset['train'].append(data_item)
+            dataset[dataset_key].append(data_item)
             data_item =  {"segment_time": [], 'text': [], 'text_tn': [], 'data_id': []}
             segment_time = 0
             segment_time_check = 0

@@ -20,7 +20,7 @@ import librosa
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-from transformers import PreTrainedTokenizerBase, GPTNeoXTokenizerFast
+from transformers import PreTrainedTokenizerBase, GPTNeoXTokenizerFast, CodeGenTokenizerFast
 
 from cobra.models.backbones.llm.prompting import PromptBuilder
 from cobra.models.backbones.vision import ImageTransform
@@ -278,6 +278,8 @@ class AlignGigaDataset(Dataset[Dict[str, torch.Tensor]]):
 
             if isinstance(self.tokenizer, GPTNeoXTokenizerFast):
                 pass
+            elif isinstance(self.tokenizer, CodeGenTokenizerFast):
+                pass
             else:
                 raise ValueError(f"Tokenizer of type `{type(self.tokenizer)}` is not explicitly handled!")
 
@@ -358,6 +360,8 @@ class FinetuneDataset(Dataset[Dict[str, torch.Tensor]]):
             msg = prompt_builder.add_turn(turn["from"], turn["value"])
 
             if isinstance(self.tokenizer, GPTNeoXTokenizerFast):
+                pass
+            elif isinstance(self.tokenizer, CodeGenTokenizerFast):
                 pass
             else:
                 raise ValueError(f"Tokenizer of type `{type(self.tokenizer)}` is not explicitly handled!")

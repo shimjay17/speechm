@@ -25,6 +25,8 @@ class DatasetConfig(ChoiceRegistry):
     align_stage_components: Path = None      # Path to annotation file containing text and audio file paths
     finetune_stage_components: Path = None  # Path to annotation file containing text and audio file paths for `finetune` stage
     align_stage_eval_components: Path = Path("data") 
+    finetune_stage_eval_components: Path = None
+
 
     dataset1_config = None 
     dataset2_config = None
@@ -152,7 +154,14 @@ class Librispeech_Gigaspeech_config(DatasetConfig):
     dataset1_config = Librispeech_Config
     dataset2_config = Gigaspeech_Config
 
+@dataclass
+class Mediasum_Config(DatasetConfig):
+    dataset_id: str = "mediasum"
 
+    finetune_stage_components: Path = Path("/data2/data_account/workspace/cobra/data/TTS/mediasum_speech/train_data/train.json")
+    finetune_stage_eval_components: Path = Path("/data2/data_account/workspace/cobra/data/TTS/mediasum_speech/val_data/val.json")
+
+    dataset_root_dir: Path = Path("data")
 
 # === Define a Dataset Registry Enum for Reference & Validation =>> all *new* datasets must be added here! ===
 @unique
@@ -170,8 +179,13 @@ class DatasetRegistry(Enum):
     # Librispeech
     LIBRISPEECH = Librispeech_Config
 
+    GIGASPEECH = Gigaspeech_Config
+
     # Multiple Datasets
     LIBRISPEECH_GIGASPEECH = Librispeech_Gigaspeech_config
+
+    MEDIASUM = Mediasum_Config
+
 
     @property
     def dataset_id(self) -> str:

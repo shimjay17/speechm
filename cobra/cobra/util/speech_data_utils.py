@@ -168,7 +168,9 @@ class GigaSpeechPaddedCollatorForLanguageModeling:
         self.overlap = int(self.sample_rate * 0.333)
 
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+        # input_ids_raw, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
         input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
+
         num_segments = torch.tensor([instance['input_values'].shape[0]//self.window_size + 1 for instance in instances])
         input_values = [self._create_overlapping_window(instance["input_values"], self.window_size, self.overlap) for instance in instances]
         assert self.sample_rate == instances[0]['sample_rate']
@@ -182,13 +184,19 @@ class GigaSpeechPaddedCollatorForLanguageModeling:
         for input_value in input_values]
 
         # input_features = np.stack(input_features, axis=0)
-        # input_features = torch.tensor(input_features, dtype=torch.float32)
-    
+        # input_features = torch.tensor(input_features, dtype=torch.float32)    
 
         # For now, we only support Tokenizers with `padding_side = "right"` during Training (but plan to extend!)
         #   => Handle padding via RNN Utils => `pad_sequence`
+        # input_ids_padded = pad_sequence(input_ids_raw, batch_first=True, padding_value=self.pad_token_id)
         input_ids = pad_sequence(input_ids, batch_first=True, padding_value=self.pad_token_id)
+
         labels = pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
+
+        # max_length = input_ids_padded.size(1)
+        # new_length = max_length + 1
+
+        # input_ids = torch.nn.functional.pad(input_ids_padded, (0, 1), value=self.pad_token_id)
 
         # Truncate (if necessary)
         input_ids, labels = input_ids[:, : self.model_max_length], labels[:, : self.model_max_length]

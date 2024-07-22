@@ -38,7 +38,7 @@ from cobra.util import set_global_seed
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # for debug turn off wandb
-# os.environ['WANDB_MODE'] = 'disabled'
+os.environ['WANDB_MODE'] = 'disabled'
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
@@ -60,7 +60,7 @@ class PretrainConfig:
 
     # Pretraining Stage in < align (projector-only) | finetune (projector + LLM) | full-finetune (all) >
     # ---
-    stage: str = "finetune"                                         # Pretraining Stage in < align | finetune >
+    stage: str = "align"                                         # Pretraining Stage in < align | finetune >
     pretrained_checkpoint: Optional[Path] = None                    # Pretrained Checkpoint to Load (for `finetune`)
                                                                     #   if None =>> will match on (run_dir / `align`)
 
@@ -196,29 +196,51 @@ def pretrain(cfg: PretrainConfig) -> None:
 
     # Get Dataset for Specified Stage
     overwatch.info(f"Creating Dataset `{cfg.dataset.dataset_id}` => Stage: `{cfg.stage}`")
-    libri_config = cfg.dataset.dataset1_config
-    gigaspeech_config = cfg.dataset.dataset2_config
-    libri_train_dataset, libri_eval_dataset, libri_collator = get_dataset_and_collator(
-        cfg.stage,
-        libri_config,
-        tokenizer=tokenizer,
-        prompt_builder_fn=llm_backbone.prompt_builder_fn,
-        processor=speech_processor,
-        padding_side=tokenizer.padding_side,
-    )
 
-    gigaspeech_train_dataset, _, gigaspeech_collator = get_dataset_and_collator( # eval_dataset is None currently # added by esyoon 2024-06-21-02:36:32
-        cfg.stage,
-        gigaspeech_config,
-        tokenizer=tokenizer,
-        prompt_builder_fn=llm_backbone.prompt_builder_fn,
-        processor=speech_processor,
-        padding_side=tokenizer.padding_side,
-    )
+    if cfg.dataset.dataset_id == "librispeech+gigaspeech": #added by Jay 07/16/2024
+        libri_config = cfg.dataset.dataset1_config
+        gigaspeech_config = cfg.dataset.dataset2_config
+    elif cfg.dataset.dataset_id == "librispeech": #added by Jay 07/16/2024
+        libri_config = cfg.dataset.dataset1_config
+    elif cfg.dataset.dataset_id == "gigaspeech": #added by Jay 07/16/2024
+        gigaspeech_config = cfg.dataset
+
+    if cfg.dataset.dataset_id in ["librispeech+gigaspeech", "librispeech"]:  # added by Jay 07/16/2024
+        libri_train_dataset, libri_eval_dataset, libri_collator = get_dataset_and_collator(
+            cfg.stage,
+            libri_config,
+            tokenizer=tokenizer,
+            prompt_builder_fn=llm_backbone.prompt_builder_fn,
+            processor=speech_processor,
+            padding_side=tokenizer.padding_side,
+        )
+        # for fast evaluation
+        eval_dataset = torch.utils.data.Subset(libri_eval_dataset, range(1000))
+        
+    if cfg.dataset.dataset_id in ["librispeech+gigaspeech", "gigaspeech"]:  # added by Jay 07/16/2024
+        gigaspeech_train_dataset, _, gigaspeech_collator = get_dataset_and_collator(
+            cfg.stage,
+            gigaspeech_config,
+            tokenizer=tokenizer,
+            prompt_builder_fn=llm_backbone.prompt_builder_fn,
+            processor=speech_processor,
+            padding_side=tokenizer.padding_side,
+        )
+
+        # Temporary gigaspeech eval dataset added by Jay 07/16/2024
+
+        # Calculate the split index for 5%
+        total_samples = len(gigaspeech_train_dataset)
+        split_index = int(0.05 * total_samples)
+
+        # Create eval_dataset with 10% of the data
+        eval_dataset = torch.utils.data.Subset(gigaspeech_train_dataset, range(split_index))
+
+        # Create new gigaspeech_train_dataset excluding the 10% used for eval_dataset
+        gigaspeech_train_dataset = torch.utils.data.Subset(gigaspeech_train_dataset, range(split_index, total_samples))
+
     #
 
-    # for fast evaluation
-    eval_dataset = torch.utils.data.Subset(libri_eval_dataset, range(1000))
 
     # Create Train Strategy
     overwatch.info(f"Initializing Train Strategy `{cfg.train_strategy}`")
@@ -240,12 +262,16 @@ def pretrain(cfg: PretrainConfig) -> None:
         reduce_in_full_precision=cfg.model.reduce_in_full_precision,
         worker_init_fn=worker_init_fn,
     )
-    train_strategy.run_setup(run_dir=run_dir, n_train_examples=len(gigaspeech_train_dataset)+len(libri_train_dataset)) # TODO: 둘다 받을 수 있게 수정
+
+    if cfg.dataset.dataset_id == "gigaspeech": 
+        train_strategy.run_setup(run_dir=run_dir, n_train_examples=len(gigaspeech_train_dataset)) # added by HSY 6/22/24
+    else: #added by Jay 07/16/2024
+        train_strategy.run_setup(run_dir=run_dir, n_train_examples=len(gigaspeech_train_dataset)+len(libri_train_dataset)) # TODO: 둘다 받을 수 있게 수정
 
     # Create Metrics =>> Handles on the fly tracking, logging to specified trackers (e.g., JSONL, Weights & Biases)
     overwatch.info(f"Creating Metrics with Active Trackers => `{cfg.trackers}`")
 
-    if cfg.dataset.dataset_id == "librispeech+gigaspeech": #added by HSY 6/22/24
+    if cfg.dataset.dataset_id == "librispeech+gigaspeech" or "gigaspeech": #added by HSY 6/22/24
         metrics = Metrics(
             cfg.trackers,
             cfg.run_id,
@@ -271,7 +297,11 @@ def pretrain(cfg: PretrainConfig) -> None:
 
     # Run Training
     overwatch.info("Starting Training Loop")
-    train_strategy.run_training(libri_dataset=libri_train_dataset, giga_dataset=gigaspeech_train_dataset, eval_dataset=eval_dataset, libri_collator=libri_collator, giga_collator=gigaspeech_collator, metrics=metrics, stage=cfg.stage, seed=cfg.seed)
+
+    if cfg.dataset.dataset_id =="gigaspeech":
+        train_strategy.run_training(libri_dataset=None, giga_dataset=gigaspeech_train_dataset, eval_dataset=eval_dataset, libri_collator=None, giga_collator=gigaspeech_collator, metrics=metrics, stage=cfg.stage, seed=cfg.seed)
+    else: #added by Jay 07/16/2024
+        train_strategy.run_training(libri_dataset=libri_train_dataset, giga_dataset=gigaspeech_train_dataset, eval_dataset=eval_dataset, libri_collator=libri_collator, giga_collator=gigaspeech_collator, metrics=metrics, stage=cfg.stage, seed=cfg.seed)
 
     # Finalize
     overwatch.info("Done with Training =>> Finalizing Metrics")

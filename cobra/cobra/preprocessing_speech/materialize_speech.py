@@ -9,6 +9,8 @@ from typing import Tuple, Type
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 
+from typing import Optional, Tuple
+
 from cobra.conf import DatasetConfig
 from cobra.models.backbones.llm.prompting import PromptBuilder
 from cobra.models.backbones.vision import ImageTransform
@@ -21,7 +23,7 @@ DATASET_INITIALIZER = {"align": AlignDataset, "finetune": FinetuneDataset, "full
 
 def get_dataset_and_collator(
     stage: str,
-    dataset_cfg: DatasetConfig,
+    dataset_cfg: Optional[DatasetConfig],
     tokenizer: PreTrainedTokenizerBase,
     prompt_builder_fn: Type[PromptBuilder],
     sample_rate:int = 16000,
@@ -39,17 +41,20 @@ def get_dataset_and_collator(
     # Switch on `stage`
     if stage == "align":
         data_json = dataset_cfg.align_stage_components
+        eval_data_json = dataset_cfg.align_stage_eval_components
         if dataset_cfg.dataset_id == 'gigaspeech':
             dataset_cls = DATASET_INITIALIZER[f"{stage}_giga"]
             collator = GigaSpeechPaddedCollatorForLanguageModeling(
                 processor, tokenizer, tokenizer.model_max_length, padding, tokenizer.pad_token_id, sample_rate, padding_side=padding_side
             )
+            eval_data_json = None
+        else:
+            eval_data_json = dataset_cfg.align_stage_eval_components
 
         dataset = dataset_cls(
             data_json, tokenizer, prompt_builder_fn=prompt_builder_fn
         )
-        eval_data_json = dataset_cfg.align_stage_eval_components
-        
+            
         eval_dataset = None
         if eval_data_json is not None:
             eval_dataset = dataset_cls(

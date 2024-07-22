@@ -6,15 +6,15 @@ torchrun --standalone --nnodes 1 --nproc_per_node 8 scripts/pretrain_speech_ver2
   --model.type "cobra+3b" \
   --model.finetune_global_batch_size 128 \
   --model.finetune_per_device_batch_size 8 \
-  --model.align_global_batch_size 256 \
-  --model.align_per_device_batch_size 16 \
-  --dataset.type "librispeech+gigaspeech" \
+  --model.align_global_batch_size 128 \
+  --model.align_per_device_batch_size 8 \
+  --dataset.type "gigaspeech" \
   --model.arch_specifier "qmamba" \
   --model.finetune_epochs 1 \
   --model.align_epochs 2 \
   --stage "align" \
   --seed 7 \
-  --run_id "qmamba+align-libri+giga" \
+  --run_id "qmamba+align-giga" \
   # --pretrained_checkpoint "runs/vlmamba+align+ln/checkpoints/latest-checkpoint.pt" \
 
 # justMamba: just middle layer to mamba, no other difference
